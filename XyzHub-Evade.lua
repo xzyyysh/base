@@ -49,7 +49,7 @@ local AutoTab = Window:CreateTab("Auto Features", "zap")
 local MovementTab = Window:CreateTab("Movement", "wind")
 local VisualsTab = Window:CreateTab("Visuals", "eye")
 
--- todo: add floating button toggle func using buttonlib later
+local ButtonLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/xzyyysh/base/refs/heads/main/Button-lib.lua"))()
 
 Players = game:GetService("Players")
 RunService = game:GetService("RunService")
@@ -101,6 +101,21 @@ AutoCarryConnection = nil
 end
 end
 
+if ButtonLib and ButtonLib.Create then
+   _G.DarahubLibBtn = _G.DarahubLibBtn or {}
+   _G.DarahubLibBtn.AutoCarry = ButtonLib.Create:Toggle({
+      Text = "Auto Carry",
+      Flag = "AutoCarry",
+      Visible = false,
+      Callback = function(state)
+         if AutoCarryToggle then
+            AutoCarryToggle:Set(state)
+         end
+      end
+   })
+   _G.DarahubLibBtn.AutoCarry.Position = UDim2.new(0.5, -125, 0.3, 0)
+end
+
 local AutoCarryToggle = AutoTab:CreateToggle({
    Name = "Auto Carry",
    CurrentValue = false,
@@ -111,6 +126,17 @@ local AutoCarryToggle = AutoTab:CreateToggle({
          startAutoCarry()
       else
          stopAutoCarry()
+      end
+   end
+})
+
+local ShowAutoCarryButton = AutoTab:CreateToggle({
+   Name = "Show Auto Carry Button",
+   CurrentValue = false,
+   Flag = "ShowAutoCarryButton",
+   Callback = function(state)
+      if _G.DarahubLibBtn and _G.DarahubLibBtn.AutoCarry then
+         _G.DarahubLibBtn.AutoCarry.Visible = state
       end
    end
 })
@@ -344,12 +370,38 @@ end)
 
 MovementTab:CreateSection("Easy Trimp")
 
+if ButtonLib and ButtonLib.Create then
+   _G.DarahubLibBtn = _G.DarahubLibBtn or {}
+   _G.DarahubLibBtn.EasyTrimp = ButtonLib.Create:Toggle({
+      Text = "Easy Trimp",
+      Flag = "EasyTrimp",
+      Visible = false,
+      Callback = function(state)
+         if EasyTrimpToggle then
+            EasyTrimpToggle:Set(state)
+         end
+      end
+   })
+   _G.DarahubLibBtn.EasyTrimp.Position = UDim2.new(0.5, -125, 0.4, 0)
+end
+
 local EasyTrimpToggle = MovementTab:CreateToggle({
    Name = "Easy Trimp",
    CurrentValue = false,
    Flag = "EasyTrimpToggle",
    Callback = function(state)
       getgenv().EasyTrimp.Enabled = state
+   end
+})
+
+local ShowEasyTrimpButton = MovementTab:CreateToggle({
+   Name = "Show Easy Trimp Button",
+   CurrentValue = false,
+   Flag = "ShowEasyTrimpButton",
+   Callback = function(state)
+      if _G.DarahubLibBtn and _G.DarahubLibBtn.EasyTrimp then
+         _G.DarahubLibBtn.EasyTrimp.Visible = state
+      end
    end
 })
 
@@ -611,6 +663,21 @@ end)
 
 MovementTab:CreateSection("Bhop / Bunny Hop")
 
+if ButtonLib and ButtonLib.Create then
+   _G.DarahubLibBtn = _G.DarahubLibBtn or {}
+   _G.DarahubLibBtn.Bhop = ButtonLib.Create:Toggle({
+      Text = "Bhop",
+      Flag = "Bhop",
+      Visible = false,
+      Callback = function(state)
+         if BhopToggle then
+            BhopToggle:Set(state)
+         end
+      end
+   })
+   _G.DarahubLibBtn.Bhop.Position = UDim2.new(0.5, -125, 0.5, 0)
+end
+
 local AutoJumpTypeDropdown = MovementTab:CreateDropdown({
    Name = "Auto Jump Type",
    Options = {"Bounce", "Realistic"},
@@ -630,6 +697,17 @@ local BhopToggle = MovementTab:CreateToggle({
       featureStates.Bhop = state
       getgenv().autoJumpEnabled = state
       checkBhopState()
+   end
+})
+
+local ShowBhopButton = MovementTab:CreateToggle({
+   Name = "Show Bhop Button",
+   CurrentValue = false,
+   Flag = "ShowBhopButton",
+   Callback = function(state)
+      if _G.DarahubLibBtn and _G.DarahubLibBtn.Bhop then
+         _G.DarahubLibBtn.Bhop.Visible = state
+      end
    end
 })
 
