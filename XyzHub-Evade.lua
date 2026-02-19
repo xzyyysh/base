@@ -1,3 +1,18 @@
+--[[
+    XyzHub Evade Features
+    by xzyyysh
+    
+    Credits to Moun Sok Dara for making these methods possible
+    and for open sourcing the code. respectfully, only using
+    the features that matter to me.
+    
+    Why Rayfield UI library?
+    - kinda lightweight and better for easy-to-use
+    - clean + modern interface without bloat
+    - makes more sense than a heavy framework
+    - faster load times and better FPS ingame
+]]
+
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
@@ -32,18 +47,25 @@ local Window = Rayfield:CreateWindow({
 
 local AutoTab = Window:CreateTab("Auto Features", "zap")
 local MovementTab = Window:CreateTab("Movement", "wind")
+local VisualsTab = Window:CreateTab("Visuals", "eye")
+
+-- todo: add floating button toggle func using buttonlib later
 
 Players = game:GetService("Players")
 RunService = game:GetService("RunService")
 UserInputService = game:GetService("UserInputService")
 Debris = game:GetService("Debris")
+ReplicatedStorage = game:GetService("ReplicatedStorage")
 player = Players.LocalPlayer
+PlayerGui = player:WaitForChild("PlayerGui")
 camera = workspace.CurrentCamera
 
 featureStates = {
    AutoCarry = false,
    Bhop = false,
-   BhopHold = false
+   BhopHold = false,
+   FastRevive = false,
+   FastReviveMethod = "Interact"
 }
 
 --[[ ========================================
@@ -89,6 +111,138 @@ local AutoCarryToggle = AutoTab:CreateToggle({
          startAutoCarry()
       else
          stopAutoCarry()
+      end
+   end
+})
+
+--[[ ========================================
+     FAST REVIVE FEATURE
+     ======================================== ]]
+
+local reviveRange = 10
+local loopDelay = 0.15
+local reviveLoopHandle = nil
+local interactEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("Character"):WaitForChild("Interact")
+
+function isPlayerDowned(pl)
+   if not pl or not pl.Character then return false end
+   local char = pl.Character
+   local humanoid = char:FindFirstChild("Humanoid")
+   if humanoid and humanoid.Health <= 0 then
+      return true
+   end
+   if char.GetAttribute and char:GetAttribute("Downed") == true then
+      return true
+   end
+   return false
+end
+
+function startAutoRevive()
+   if featureStates.FastReviveMethod == "Auto" then
+      if reviveLoopHandle then return end
+      reviveLoopHandle = task.spawn(function()
+         while featureStates.FastRevive do
+            local LocalPlayer = Players.LocalPlayer
+            if LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+               local myHRP = LocalPlayer.Character.HumanoidRootPart
+               for _, pl in ipairs(Players:GetPlayers()) do
+                  if pl ~= LocalPlayer then
+                     local char = pl.Character
+                     if char and char:FindFirstChild("HumanoidRootPart") then
+                        if isPlayerDowned(pl) then
+                           local hrp = char.HumanoidRootPart
+                           local success, dist = pcall(function()
+                              return (myHRP.Position - hrp.Position).Magnitude
+                           end)
+                           if success and dist and dist <= reviveRange then
+                              pcall(function()
+                                 interactEvent:FireServer("Revive", true, pl.Name)
+                              end)
+                           end
+                        end
+                     end
+                  end
+               end
+            end
+            task.wait(loopDelay)
+         end
+         reviveLoopHandle = nil
+      end)
+   elseif featureStates.FastReviveMethod == "Interact" then
+      if not featureStates.interactHookActive then
+         local localPlayer = Players.LocalPlayer
+         local eventsFolder = localPlayer.PlayerScripts:WaitForChild("Events")
+         local tempEventsFolder = eventsFolder:WaitForChild("temporary_events")
+         local useKeybind = tempEventsFolder:WaitForChild("UseKeybind")
+         local connection = useKeybind.Event:Connect(function(...)
+            local args = {...}
+            if args[1] and type(args[1]) == "table" then
+               local keyData = args[1]
+               if keyData.Key == "Interact" and keyData.Down == true and featureStates.FastRevive then
+                  function reviveAllPlayers()
+                     local ohString1 = "Revive"
+                     local ohBoolean2 = true
+                     for _, player in pairs(Players:GetPlayers()) do
+                        if player ~= localPlayer then
+                           local ohString3 = player.Name
+                           pcall(function()
+                              interactEvent:FireServer(ohString1, ohBoolean2, ohString3)
+                           end)
+                        end
+                     end
+                  end
+                  task.spawn(reviveAllPlayers)
+               end
+            end
+         end)
+         featureStates.interactConnection = connection
+         featureStates.interactHookActive = true
+      end
+   end
+end
+
+function stopAutoRevive()
+   if reviveLoopHandle then
+      task.cancel(reviveLoopHandle)
+      reviveLoopHandle = nil
+   end
+   if featureStates.interactHookActive then
+      if featureStates.interactConnection then
+         featureStates.interactConnection:Disconnect()
+         featureStates.interactConnection = nil
+      end
+      featureStates.interactHookActive = false
+   end
+end
+
+local FastReviveToggle = AutoTab:CreateToggle({
+   Name = "Fast Revive",
+   CurrentValue = false,
+   Flag = "FastReviveToggle",
+   Callback = function(state)
+      featureStates.FastRevive = state
+      if state then
+         startAutoRevive()
+      else
+         stopAutoRevive()
+      end
+   end
+})
+
+local FastReviveMethodDropdown = AutoTab:CreateDropdown({
+   Name = "Fast Revive Method",
+   Options = {"Auto", "Interact"},
+   CurrentOption = {"Interact"},
+   MultipleOptions = false,
+   Flag = "FastReviveMethodDropdown",
+   Callback = function(options)
+      featureStates.FastReviveMethod = options[1]
+      stopAutoRevive()
+      if featureStates.FastReviveMethod == "Interact" then
+         featureStates.interactHookActive = false
+      end
+      if featureStates.FastRevive then
+         startAutoRevive()
       end
    end
 })
@@ -534,5 +688,453 @@ local JumpCooldownInput = MovementTab:CreateInput({
       if n and n > 0 then
          getgenv().jumpCooldown = n
       end
+   end
+})
+
+
+--[[ ========================================
+     TIMER DISPLAY FEATURE
+     ======================================== ]]
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TimerGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
+
+local Timer = Instance.new("Frame")
+Timer.Name = "Timer"
+Timer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+Timer.BackgroundTransparency = 1
+Timer.BorderColor3 = Color3.fromRGB(27, 42, 53)
+Timer.Size = UDim2.new(1, 0, 1, 0)
+Timer.Parent = ScreenGui
+
+local Top = Instance.new("Frame")
+Top.Name = "Top"
+Top.AnchorPoint = Vector2.new(0.5, 0)
+Top.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+Top.BackgroundTransparency = 1
+Top.BorderColor3 = Color3.fromRGB(27, 42, 53)
+Top.Position = UDim2.new(0.5, 0, 0, 0)
+Top.Size = UDim2.new(1, 0, 1, 0)
+Top.Parent = Timer
+
+local AspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
+AspectRatioConstraint.Parent = Top
+
+local SizeConstraint = Instance.new("UISizeConstraint")
+SizeConstraint.MaxSize = Vector2.new(900, 900)
+SizeConstraint.Parent = Top
+
+local MainTimer = Instance.new("Frame")
+MainTimer.Name = "MainTimer"
+MainTimer.AnchorPoint = Vector2.new(0.5, 0)
+MainTimer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+MainTimer.BackgroundTransparency = 0.6
+MainTimer.BorderColor3 = Color3.fromRGB(27, 42, 53)
+MainTimer.BorderSizePixel = 0
+MainTimer.Position = UDim2.new(0.5, 0, 0.04, 0)
+MainTimer.Size = UDim2.new(0.25, 0, 0.1, 0)
+MainTimer.Parent = Top
+MainTimer.Visible = false
+
+local MainTimerCorner = Instance.new("UICorner")
+MainTimerCorner.CornerRadius = UDim.new(0, 4)
+MainTimerCorner.Parent = MainTimer
+
+local MainTimerStroke = Instance.new("UIStroke")
+MainTimerStroke.Transparency = 0.8
+MainTimerStroke.Parent = MainTimer
+
+local TimerBackground = Instance.new("ImageLabel")
+TimerBackground.Name = "Background"
+TimerBackground.Image = "rbxassetid://196969716"
+TimerBackground.ImageColor3 = Color3.fromRGB(21, 21, 21)
+TimerBackground.ImageTransparency = 0.7
+TimerBackground.AnchorPoint = Vector2.new(0.5, 0.5)
+TimerBackground.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+TimerBackground.BackgroundTransparency = 1
+TimerBackground.BorderColor3 = Color3.fromRGB(27, 42, 53)
+TimerBackground.Position = UDim2.new(0.5, 0, 0.5, 0)
+TimerBackground.Size = UDim2.new(1, 0, 1, 0)
+TimerBackground.ZIndex = 0
+TimerBackground.Parent = MainTimer
+
+local TimerBackgroundCorner = Instance.new("UICorner")
+TimerBackgroundCorner.CornerRadius = UDim.new(0, 4)
+TimerBackgroundCorner.Parent = TimerBackground
+
+local TimerImage = Instance.new("ImageLabel")
+TimerImage.Image = "rbxassetid://6761866149"
+TimerImage.ImageColor3 = Color3.fromRGB(165, 194, 255)
+TimerImage.ImageTransparency = 0.9
+TimerImage.ScaleType = Enum.ScaleType.Crop
+TimerImage.AnchorPoint = Vector2.new(0.5, 0.5)
+TimerImage.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+TimerImage.BackgroundTransparency = 1
+TimerImage.BorderColor3 = Color3.fromRGB(27, 42, 53)
+TimerImage.Position = UDim2.new(0.5, 0, 0.5, 0)
+TimerImage.Size = UDim2.new(0.8, 0, 1, 0)
+TimerImage.ZIndex = 2
+TimerImage.Parent = MainTimer
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Name = "Status"
+StatusLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+StatusLabel.Text = "ROUND ACTIVE"
+StatusLabel.TextColor3 = Color3.fromRGB(165, 194, 255)
+StatusLabel.TextScaled = true
+StatusLabel.TextSize = 14
+StatusLabel.TextStrokeTransparency = 0.95
+StatusLabel.TextWrapped = true
+StatusLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+StatusLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.BorderColor3 = Color3.fromRGB(27, 42, 53)
+StatusLabel.Position = UDim2.new(0.5, 0, 0.25, 0)
+StatusLabel.Size = UDim2.new(0.8, 0, 0.25, 0)
+StatusLabel.ZIndex = 3
+StatusLabel.Parent = MainTimer
+
+local StatusStroke = Instance.new("UIStroke")
+StatusStroke.Thickness = 2
+StatusStroke.Transparency = 0.7
+StatusStroke.Parent = StatusLabel
+
+local StatusGradient = Instance.new("UIGradient")
+StatusGradient.Color = ColorSequence.new({
+   ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+   ColorSequenceKeypoint.new(1, Color3.fromRGB(194, 194, 194))
+})
+StatusGradient.Rotation = 90
+StatusGradient.Parent = StatusLabel
+
+local TimeDisplay = Instance.new("TextLabel")
+TimeDisplay.Name = "TimeDisplay"
+TimeDisplay.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+TimeDisplay.Text = "0:00"
+TimeDisplay.TextColor3 = Color3.fromRGB(165, 194, 255)
+TimeDisplay.TextScaled = true
+TimeDisplay.TextSize = 14
+TimeDisplay.TextStrokeTransparency = 0.95
+TimeDisplay.TextWrapped = true
+TimeDisplay.AnchorPoint = Vector2.new(0.5, 0.5)
+TimeDisplay.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+TimeDisplay.BackgroundTransparency = 1
+TimeDisplay.BorderColor3 = Color3.fromRGB(27, 42, 53)
+TimeDisplay.Position = UDim2.new(0.5, 0, 0.65, 0)
+TimeDisplay.Size = UDim2.new(0.5, 0, 0.5, 0)
+TimeDisplay.ZIndex = 3
+TimeDisplay.Parent = MainTimer
+
+local TimeStroke = Instance.new("UIStroke")
+TimeStroke.Thickness = 3
+TimeStroke.Transparency = 0.7
+TimeStroke.Parent = TimeDisplay
+
+local TimeGradient = Instance.new("UIGradient")
+TimeGradient.Color = ColorSequence.new({
+   ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+   ColorSequenceKeypoint.new(1, Color3.fromRGB(194, 194, 194))
+})
+TimeGradient.Rotation = 90
+TimeGradient.Parent = TimeDisplay
+
+local SpecialRound = Instance.new("Frame")
+SpecialRound.Name = "SpecialRound"
+SpecialRound.AnchorPoint = Vector2.new(0.5, 0)
+SpecialRound.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+SpecialRound.BackgroundTransparency = 0.6
+SpecialRound.BorderColor3 = Color3.fromRGB(27, 42, 53)
+SpecialRound.BorderSizePixel = 0
+SpecialRound.Position = UDim2.new(0.5, 0, 0.15, 0)
+SpecialRound.Size = UDim2.new(0.23, 0, 0.05, 0)
+SpecialRound.Parent = Top
+SpecialRound.Visible = false
+
+local SpecialRoundLabel = Instance.new("TextLabel")
+SpecialRoundLabel.Name = "Label"
+SpecialRoundLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+SpecialRoundLabel.Text = "No Jumping"
+SpecialRoundLabel.TextColor3 = Color3.fromRGB(255, 208, 115)
+SpecialRoundLabel.TextScaled = true
+SpecialRoundLabel.TextSize = 14
+SpecialRoundLabel.TextStrokeTransparency = 0.95
+SpecialRoundLabel.TextWrapped = true
+SpecialRoundLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+SpecialRoundLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+SpecialRoundLabel.BackgroundTransparency = 1
+SpecialRoundLabel.BorderColor3 = Color3.fromRGB(27, 42, 53)
+SpecialRoundLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+SpecialRoundLabel.Size = UDim2.new(0.9, 0, 0.6, 0)
+SpecialRoundLabel.ZIndex = 3
+SpecialRoundLabel.Parent = SpecialRound
+
+local SpecialRoundStroke = Instance.new("UIStroke")
+SpecialRoundStroke.Thickness = 2
+SpecialRoundStroke.Transparency = 0.7
+SpecialRoundStroke.Parent = SpecialRoundLabel
+
+local SpecialRoundCorner = Instance.new("UICorner")
+SpecialRoundCorner.CornerRadius = UDim.new(0, 4)
+SpecialRoundCorner.Parent = SpecialRound
+
+local SpecialRoundBackground = Instance.new("ImageLabel")
+SpecialRoundBackground.Name = "Background"
+SpecialRoundBackground.Image = "rbxassetid://196969716"
+SpecialRoundBackground.ImageColor3 = Color3.fromRGB(21, 21, 21)
+SpecialRoundBackground.ImageTransparency = 0.7
+SpecialRoundBackground.AnchorPoint = Vector2.new(0.5, 0.5)
+SpecialRoundBackground.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+SpecialRoundBackground.BackgroundTransparency = 1
+SpecialRoundBackground.BorderColor3 = Color3.fromRGB(27, 42, 53)
+SpecialRoundBackground.Position = UDim2.new(0.5, 0, 0.5, 0)
+SpecialRoundBackground.Size = UDim2.new(1, 0, 1, 0)
+SpecialRoundBackground.ZIndex = 0
+SpecialRoundBackground.Parent = SpecialRound
+
+local SpecialRoundBackgroundCorner = Instance.new("UICorner")
+SpecialRoundBackgroundCorner.CornerRadius = UDim.new(0, 4)
+SpecialRoundBackgroundCorner.Parent = SpecialRoundBackground
+
+local SpecialRoundUIStroke = Instance.new("UIStroke")
+SpecialRoundUIStroke.Transparency = 0.8
+SpecialRoundUIStroke.Parent = SpecialRound
+
+local TimerGUI = {
+   ScreenGui = ScreenGui,
+   TimeDisplay = TimeDisplay,
+   SpecialRoundLabel = SpecialRoundLabel,
+   StatusLabel = StatusLabel,
+   MainTimer = MainTimer,
+   SpecialRound = SpecialRound,
+   TimerEnabled = false,
+   SpecialRoundEnabled = false,
+   CurrentSpecialRoundName = "",
+   OriginalTimerVisible = false
+}
+
+function TimerGUI:GetRoundTitle(roundName)
+   if not roundName or roundName == "" then
+      return ""
+   end
+   local specialRoundsFolder = ReplicatedStorage:FindFirstChild("Info")
+   if not specialRoundsFolder then return roundName end
+   specialRoundsFolder = specialRoundsFolder:FindFirstChild("SpecialRounds")
+   if not specialRoundsFolder then return roundName end
+   local roundModule = specialRoundsFolder:FindFirstChild(roundName)
+   if not roundModule then return roundName end
+   local success, moduleData = pcall(function()
+      return require(roundModule)
+   end)
+   if success and moduleData and moduleData.Title then
+      return moduleData.Title
+   end
+   return roundName
+end
+
+function TimerGUI:SetTime(seconds)
+   if type(seconds) == "number" then
+      local minutes = math.floor(seconds / 60)
+      local remainingSeconds = math.floor(seconds % 60)
+      self.TimeDisplay.Text = string.format("%d:%02d", minutes, remainingSeconds)
+      if seconds <= 5 then
+         self.TimeDisplay.TextColor3 = Color3.fromRGB(215, 100, 100)
+         self.StatusLabel.TextColor3 = Color3.fromRGB(215, 100, 100)
+      else
+         self.TimeDisplay.TextColor3 = Color3.fromRGB(165, 194, 255)
+         self.StatusLabel.TextColor3 = Color3.fromRGB(165, 194, 255)
+      end
+   else
+      self.TimeDisplay.Text = tostring(seconds)
+   end
+end
+
+function TimerGUI:SetSpecialRound(roundName)
+   if roundName and roundName ~= "" then
+      self.CurrentSpecialRoundName = roundName
+      local roundTitle = self:GetRoundTitle(roundName)
+      self.SpecialRoundLabel.Text = roundTitle
+      self.SpecialRound.Visible = self.SpecialRoundEnabled
+   else
+      self.CurrentSpecialRoundName = ""
+      self.SpecialRound.Visible = false
+   end
+end
+
+function TimerGUI:SetStatus(text)
+   self.StatusLabel.Text = text:upper()
+end
+
+function TimerGUI:SetTimerVisible(visible)
+   self.TimerEnabled = visible
+   self.OriginalTimerVisible = visible
+   if self.CheckingGameTimer then
+      self:CheckGameTimerVisibility()
+   else
+      self.MainTimer.Visible = visible
+   end
+end
+
+function TimerGUI:SetSpecialRoundVisible(visible)
+   self.SpecialRoundEnabled = visible
+   if visible and self.CurrentSpecialRoundName ~= "" then
+      self.SpecialRound.Visible = true
+   else
+      self.SpecialRound.Visible = false
+   end
+end
+
+function TimerGUI:CheckGameTimerVisibility()
+   if not self.TimerEnabled then
+      self.MainTimer.Visible = false
+      return
+   end
+   local hud = player.PlayerGui:FindFirstChild("Shared")
+   if not hud then
+      self.MainTimer.Visible = self.OriginalTimerVisible
+      return
+   end
+   hud = hud:FindFirstChild("HUD")
+   if not hud then
+      self.MainTimer.Visible = self.OriginalTimerVisible
+      return
+   end
+   hud = hud:FindFirstChild("Overlay")
+   if not hud then
+      self.MainTimer.Visible = self.OriginalTimerVisible
+      return
+   end
+   hud = hud:FindFirstChild("Default")
+   if not hud then
+      self.MainTimer.Visible = self.OriginalTimerVisible
+      return
+   end
+   hud = hud:FindFirstChild("RoundOverlay")
+   if not hud then
+      self.MainTimer.Visible = self.OriginalTimerVisible
+      return
+   end
+   hud = hud:FindFirstChild("Round")
+   if not hud then
+      self.MainTimer.Visible = self.OriginalTimerVisible
+      return
+   end
+   local roundTimer = hud:FindFirstChild("RoundTimer")
+   if not roundTimer then
+      self.MainTimer.Visible = self.OriginalTimerVisible
+      return
+   end
+   if roundTimer.Visible then
+      self.MainTimer.Visible = false
+   else
+      self.MainTimer.Visible = self.OriginalTimerVisible
+   end
+end
+
+function TimerGUI:StartGameTimerCheck()
+   if self.CheckingGameTimer then return end
+   self.CheckingGameTimer = true
+   spawn(function()
+      while self.CheckingGameTimer do
+         self:CheckGameTimerVisibility()
+         wait(0.1)
+      end
+   end)
+end
+
+function TimerGUI:StopGameTimerCheck()
+   self.CheckingGameTimer = false
+   self.MainTimer.Visible = self.OriginalTimerVisible
+end
+
+function TimerGUI:UpdateFromAttributes()
+   local statsFolder = workspace:FindFirstChild("Game")
+   if not statsFolder then return end
+   statsFolder = statsFolder:FindFirstChild("Stats")
+   if not statsFolder then return end
+   local timerValue = statsFolder:GetAttribute("Timer")
+   local specialRoundValue = statsFolder:GetAttribute("SpecialRound")
+   local roundStarted = statsFolder:GetAttribute("RoundStarted")
+   if timerValue then
+      self:SetTime(timerValue)
+   end
+   if roundStarted ~= nil then
+      if roundStarted == true then
+         self:SetStatus("Round Active")
+      else
+         self:SetStatus("Intermission")
+      end
+   end
+   if specialRoundValue then
+      self:SetSpecialRound(tostring(specialRoundValue))
+   else
+      self:SetSpecialRound("")
+   end
+end
+
+function TimerGUI:StartAttributeMonitor()
+   if self._attributeConnection then
+      self._attributeConnection:Disconnect()
+   end
+   local statsFolder = workspace:FindFirstChild("Game")
+   if not statsFolder then return end
+   statsFolder = statsFolder:FindFirstChild("Stats")
+   if not statsFolder then return end
+   self._attributeConnection = statsFolder:GetAttributeChangedSignal("Timer"):Connect(function()
+      self:UpdateFromAttributes()
+   end)
+   self._attributeConnection2 = statsFolder:GetAttributeChangedSignal("RoundStarted"):Connect(function()
+      self:UpdateFromAttributes()
+   end)
+   self._attributeConnection3 = statsFolder:GetAttributeChangedSignal("SpecialRound"):Connect(function()
+      self:UpdateFromAttributes()
+   end)
+   self:UpdateFromAttributes()
+end
+
+function TimerGUI:StopAttributeMonitor()
+   if self._attributeConnection then
+      self._attributeConnection:Disconnect()
+      self._attributeConnection = nil
+   end
+   if self._attributeConnection2 then
+      self._attributeConnection2:Disconnect()
+      self._attributeConnection2 = nil
+   end
+   if self._attributeConnection3 then
+      self._attributeConnection3:Disconnect()
+      self._attributeConnection3 = nil
+   end
+end
+
+TimerGUI:SetTimerVisible(false)
+TimerGUI:SetSpecialRoundVisible(false)
+TimerGUI:StartAttributeMonitor()
+
+local TimerDisplayToggle = VisualsTab:CreateToggle({
+   Name = "Timer Display",
+   CurrentValue = false,
+   Flag = "TimerDisplayToggle",
+   Callback = function(state)
+      if state then
+         TimerGUI.ScreenGui.Enabled = true
+         TimerGUI:SetTimerVisible(true)
+         TimerGUI:StartAttributeMonitor()
+         TimerGUI:StartGameTimerCheck()
+      else
+         TimerGUI:SetTimerVisible(false)
+         TimerGUI:StopGameTimerCheck()
+      end
+   end
+})
+
+local SpecialRoundToggle = VisualsTab:CreateToggle({
+   Name = "Special Round Display",
+   CurrentValue = false,
+   Flag = "SpecialRoundToggle",
+   Callback = function(state)
+      TimerGUI:SetSpecialRoundVisible(state)
    end
 })
