@@ -699,10 +699,6 @@ if ButtonLib and ButtonLib.Create then
    })
    _G.DarahubLibBtn.Bhop.Position = UDim2.new(0.5, -125, 0.5, 0)
 end
-      getgenv().autoJumpEnabled = state
-      checkBhopState()
-   end
-})
 
 local ShowBhopButton = MovementTab:CreateToggle({
    Name = "Show Bhop Button",
