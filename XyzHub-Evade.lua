@@ -1222,7 +1222,6 @@ local SpecialRoundToggle = VisualsTab:CreateToggle({
 MiscTab:CreateSection("Server")
 
 local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
 
 local RejoinButton = MiscTab:CreateButton({
    Name = "Rejoin Server",
@@ -1234,44 +1233,6 @@ local RejoinButton = MiscTab:CreateButton({
          TeleportService:Teleport(placeId, player)
       else
          TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
-      end
-   end
-})
-
-local ServerHopButton = MiscTab:CreateButton({
-   Name = "Server Hop",
-   Callback = function()
-      local placeId = game.PlaceId
-      local currentJobId = game.JobId
-      
-      local success, servers = pcall(function()
-         local url = string.format(
-            "https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=100",
-            placeId
-         )
-         return HttpService:JSONDecode(game:HttpGet(url))
-      end)
-      
-      if success and servers and servers.data then
-         local validServers = {}
-         
-         for _, server in ipairs(servers.data) do
-            if server.id ~= currentJobId and server.playing < server.maxPlayers then
-               local capacity = (server.playing / server.maxPlayers) * 100
-               if capacity >= 90 then
-                  table.insert(validServers, server)
-               end
-            end
-         end
-         
-         if #validServers > 0 then
-            local randomServer = validServers[math.random(1, #validServers)]
-            TeleportService:TeleportToPlaceInstance(placeId, randomServer.id, player)
-         else
-            TeleportService:Teleport(placeId, player)
-         end
-      else
-         TeleportService:Teleport(placeId, player)
       end
    end
 })
